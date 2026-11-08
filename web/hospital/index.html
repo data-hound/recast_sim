@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlioAgent Hospital simulation</title>
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../clinic/clinic.css">
+<link rel="stylesheet" href="hospital.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header>
+  <div class="brand">GlioAgent <b>Hospital</b> · simulation</div>
+  <div class="hinfo" id="hinfo" hidden>
+    <span id="who" class="hwho"></span>
+    <span id="hname" class="hname"></span>
+    <span id="hclock" class="hclock" title="Simulated clock"></span>
+    <button class="g hnext" id="nextBtn" data-act="next" title="Jump the simulated clock to the next pending result">⏩ Next result</button>
+  </div>
+  <nav class="cnav"><a href="../clinic/">Clinician tool</a><a href="../">Path Arcade</a><a href="#" id="logout" data-act="logout" hidden>Sign out</a></nav>
+</header>
+<main class="clinic hosp">
+  <div class="banner" role="note"><b>Simulation for demonstration: fictional hospitals, public research cases, compressed time. Not for clinical decisions.</b></div>
+  <div class="tabs" id="tabs" hidden></div>
+  <div id="view"><div class="card">Loading the public model and simulated cases…</div></div>
+</main>
+<footer>Research prototype from RECAST v2 (Track 2, GlioAgent). Fictional hospitals; cases from public research cohorts. Not medical advice. Not a medical device.</footer>
+<script src="../js/clinic_engine.js"></script>
+<script src="../js/hospital.js"></script>
+</body>
+</html>

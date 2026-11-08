@@ -8,6 +8,7 @@ cp $W/css/style.css public/css/style.css
 cp $W/clinic/clinic.css public/clinic.css
 cp $W/clinic/model.json public/model.json
 cp $W/clinic/model.json public/clinic/model.json
+cp $W/clinic/clinic.css public/clinic/clinic.css
 cp $W/js/clinic_engine.js $W/js/clinic.js public/js/
 cp $W/favicon.svg public/favicon.svg
 if [ -f $W/hospital/index.html ] && [ -f $W/js/hospital.js ] && [ -z "$SKIP_HOSPITAL" ]; then
