@@ -1,10 +1,24 @@
-# GlioAgent Workup (clinician): no Informer datasets needed. All computation runs in the page;
-# the only server code is the opt-in team log (server/caselog, migrations/001_case_log.sql).
+# GlioAgent Workup (clinician tool + hospital simulation + Daily Workup practice).
+# All planning runs in the page; the only server code is the opt-in team log (server/caselog, migrations/).
+# The five hospitals are fictional and their cases come from public research cohorts. A hospital is a ROLE, not a
+# tenant: the publisher assigns one site_* role per demo user when sharing the App.
 dependencies: {}
 roles:
-  - id: clinician
-    name: Clinician
-    description: Uses the tool and may save cases (no patient identifiers) to the team log
+  - id: site_lakeside
+    name: Lakeside General Hospital (simulated)
+    description: Clinician at the simulated Lakeside General Hospital
+  - id: site_riverbend
+    name: Riverbend University Hospital (simulated)
+    description: Clinician at the simulated Riverbend University Hospital
+  - id: site_harbor
+    name: Harbor Point Cancer Institute (simulated)
+    description: Clinician at the simulated Harbor Point Cancer Institute
+  - id: site_northgate
+    name: Northgate Regional Medical Center (simulated)
+    description: Clinician at the simulated Northgate Regional Medical Center
+  - id: site_valley
+    name: Valley Community Hospital (simulated, resource-limited)
+    description: Clinician at the simulated resource-limited Valley Community Hospital
   - id: steward
     name: Stewardship lead
-    description: Reviews the team log and its summary
+    description: Sees the site dashboard and the team log summary
