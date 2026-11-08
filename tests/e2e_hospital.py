@@ -237,21 +237,30 @@ def main():
         expect("no-storage: daily case completes with a golf label", bool(text("#golf")) and "Daily Workup" in (c.ev("(function(){var t=document.getElementById('shareTxt'); return t ? t.value : '';})()") or ""))
         c.shot(f"{a.shots}/h9_nostorage_practice.png")
 
-        # --- inside Informer: window.__INFORMER__.user is noted, but the demo sign-in is still required (storage still blocked)
-        sid = c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{displayName:'Dr Test <b>x</b>',roles:['site_valley',{id:'steward'}]}};")["identifier"]
+        # --- inside Informer: the link's roles (window.__INFORMER__.roles, top level) lock the demo accounts; storage still blocked
+        sid = c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{username:'admin',displayName:'Dr Test <b>x</b>'},roles:['site_valley','steward']};")["identifier"]
         c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer")); time.sleep(1.5)
-        v1 = text("#view") or ""
-        expect("informer: still opens on the sign-in page, Informer name shown escaped", "Signed in to Informer as Dr Test <b>x</b>" in v1 and
-               bool(c.ev("!!document.getElementById('loginForm')")), v1[:200])
+        note = text("#informerNote") or ""
+        expect("informer: sign-in page notes the Informer user (escaped) and the link's roles", "Dr Test <b>x</b>" in note and "Valley Community Hospital" in note and
+               bool(c.ev("!!document.getElementById('loginForm')")), note[:200])
         expect("informer: site role prefills the Valley clinician", c.ev("document.getElementById('loginEmail').value") == "dummy_clinician@valley-community.example")
-        c.ev("document.getElementById('loginPass').value='demo'"); click("#loginBtn"); time.sleep(0.5)
+        nlock = c.ev("document.querySelectorAll('[data-act=fill][disabled]').length")
+        expect("informer: 5 accounts locked (4 other clinicians, Lakeside steward, judge -> 6)", nlock == 6, str(nlock))
+        login(EMAIL["clin.lakeside"], "demo")
+        expect("informer: Lakeside account refused on a Valley link", "does not include Lakeside" in (text("#loginErr") or "") and c.ev("document.getElementById('tabs').hidden") is True)
+        login(EMAIL["clin.valley"], "demo")
         expect("informer: signs in to Valley", "Valley Community Hospital" in (text("#hname") or ""))
-        expect("informer: label names the Informer user", "Informer: Dr Test" in (text("#tabs") or ""))
+        expect("informer: label says opened through Informer", "Opened through Informer" in (text("#tabs") or ""))
         c.shot(f"{a.shots}/h10_informer.png")
         c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=sid)
-        c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{name:'nosite',roles:[]}};")
+        sid = c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{username:'admin'},roles:['site_lakeside','site_riverbend','site_harbor','site_northgate','site_valley','steward']};")["identifier"]
         c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer2")); time.sleep(1.5)
-        expect("informer without site role: empty email, judge can sign in", c.ev("document.getElementById('loginEmail').value") == "" and signin("judge"))
+        expect("informer owner (all roles): nothing locked, judge can sign in", c.ev("document.querySelectorAll('[data-act=fill][disabled]').length") == 0 and signin("judge"))
+        c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=sid)
+        c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{username:'nosite'},roles:[]};")
+        c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer3")); time.sleep(1.5)
+        expect("informer without site role: empty email, all open, judge can sign in", c.ev("document.getElementById('loginEmail').value") == "" and
+               c.ev("document.querySelectorAll('[data-act=fill][disabled]').length") == 0 and signin("judge"))
 
         c.drain(1.0)
         reqs = [e["params"]["request"]["url"] for e in c.events if e.get("method") == "Network.requestWillBeSent"]

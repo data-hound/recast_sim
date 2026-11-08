@@ -197,7 +197,7 @@
     if (S.user.steward) tabs.push(["dash", "Site dashboard"]);
     tabs.push(["practice", "Practice · Daily Workup"]);
     $("tabs").innerHTML = tabs.map(function (t) { return "<button class=\"g" + (S.tab === t[0] ? " sel" : "") + "\" data-act=\"tab\" data-tab=\"" + t[0] + "\" id=\"tab_" + t[0] + "\">" + esc(t[1]) + "</button>"; }).join("") +
-      "<span class=\"sp sm muted\">" + (IU ? "Informer: " + esc(IU.name) + " · demo persona" : "Demo sign-in") + " · simulated hospitals · public research data · 1 simulated day = " + esc(SPEED) + " s</span>" +
+      "<span class=\"sp sm muted\">" + (IU ? "Opened through Informer · demo persona" : "Demo sign-in") + " · simulated hospitals · public research data · 1 simulated day = " + esc(SPEED) + " s</span>" +
       "<button class=\"g sm\" data-act=\"reset\" id=\"resetBtn\">Reset simulation</button>";
     tickClock();
   }
@@ -218,37 +218,53 @@
   }
 
   /* ---------------------------------------------------------------- sign-in */
+  /* Inside Informer the page gets window.__INFORMER__ = {user: {username, displayName}, roles: [...], ...}. On an external
+     (share) link the user is the link's creator and the roles are the ones chosen on the link; the App owner has every role.
+     The roles decide which demo accounts may be used here: site_<hospital> for that hospital's clinician, plus steward for
+     its steward account; the judge account needs every site role. With no site role at all, every account is allowed. */
   function informerUser() {
     var I = window.__INFORMER__;
-    if (!I || typeof I !== "object" || !I.user || typeof I.user !== "object") return null;
-    var u = I.user, name = u.displayName || u.display_name || u.name || u.username || u.id || "Informer user";
-    var raw = [].concat(Array.isArray(u.roles) ? u.roles : [], Array.isArray(I.roles) ? I.roles : []);
+    if (!I || typeof I !== "object") return null;
+    var u = I.user && typeof I.user === "object" ? I.user : {}, name = u.displayName || u.display_name || u.name || u.username || "Informer user";
+    var raw = [].concat(Array.isArray(I.roles) ? I.roles : [], Array.isArray(u.roles) ? u.roles : []);
     var roles = raw.map(function (r) { return typeof r === "string" ? r : r && typeof r === "object" ? String(r.id || r.name || "") : ""; });
-    var site = null;
-    roles.forEach(function (r) { var m = /^site_(.+)$/.exec(r); if (m && HOSP[m[1]] && !site) site = m[1]; });
-    var steward = roles.indexOf("steward") >= 0;
-    return {id: String(u.username || u.id || name), name: String(name), role: (steward ? "Data steward" : "Clinician") + " (Informer)", site: site, steward: steward,
-            anySite: !site, informer: true};
+    var sites = [];
+    roles.forEach(function (r) { var m = /^site_(.+)$/.exec(r); if (m && HOSP[m[1]] && sites.indexOf(m[1]) < 0) sites.push(m[1]); });
+    if (!I.user && !roles.length) return null;
+    return {name: String(name), sites: sites, steward: roles.indexOf("steward") >= 0, all: sites.length === Object.keys(HOSP).length};
+  }
+  function allowed(u) {
+    if (!IU || !IU.sites.length) return true;
+    if (u.judge) return IU.all;
+    return IU.sites.indexOf(u.site) >= 0 && (!u.steward || IU.steward);
+  }
+  function roleNote() {
+    if (!IU) return "";
+    var r = IU.sites.map(function (h) { return HOSP[h].name; }).concat(IU.steward ? ["data steward"] : []);
+    return "<div class=\"note\" id=\"informerNote\">Opened through Informer (" + esc(IU.name) + ")" +
+      (IU.sites.length ? ". This link's Informer roles: <b>" + esc(r.join(", ")) + "</b>. Accounts outside these roles are locked." : ". No hospital role on this link, so every demo account is open.") + "</div>";
   }
   function renderSignin() {
     var v = $("view"), pre = "";
-    if (IU && IU.site) USERS.forEach(function (u) { if (!pre && u.site === IU.site && !u.steward) pre = u.id; });
+    if (IU && IU.sites.length) USERS.forEach(function (u) { if (!pre && !u.steward && !u.judge && allowed(u)) pre = u.id; });
     v.innerHTML = "<div class=\"card signin\"><h2>Sign in · GlioAgent Workup</h2>" +
       "<div class=\"sm muted\">Simulated hospital accounts. Hospitals are fictional; their worklists are adult glioma cases from the public TCGA cohort, split by the contributing institution. " +
       "Time is compressed (1 simulated day = " + esc(SPEED) + " real seconds). This is a demonstration, not a clinical system.</div>" +
-      (IU ? "<div class=\"note\">Signed in to Informer as <b>" + esc(IU.name) + "</b>. Choose the simulated hospital account to use.</div>" : "") +
+      roleNote() +
       "<form id=\"loginForm\" class=\"login\" autocomplete=\"off\"><label>Email<input id=\"loginEmail\" type=\"email\" placeholder=\"dummy_clinician@lakeside-general.example\" value=\"" + esc(pre) + "\"></label>" +
       "<label>Password<input id=\"loginPass\" type=\"password\" placeholder=\"demo\"></label>" +
       "<button class=\"g pri\" type=\"submit\" id=\"loginBtn\">Sign in</button><div class=\"sm bad\" id=\"loginErr\" role=\"alert\"></div></form>" +
       "<h3>Demo accounts (password: <code>" + esc(DEMO_PASSWORD) + "</code>)</h3><div class=\"sm muted\">Click one to fill the form. Every account also has the Clinician tool and Practice · Daily Workup (external cohorts, not the hospital's own cases).</div>" +
       "<div class=\"ulist\">" + USERS.map(function (u, i) {
-        return "<button class=\"g\" type=\"button\" data-act=\"fill\" data-u=\"" + esc(u.id) + "\" id=\"u_" + i + "\"><b>" + esc(u.id) + "</b><span class=\"sm muted\">" + esc(u.role) +
-          (u.judge ? " · can switch hospital" : " · " + esc(HOSP[u.site].name)) + "</span></button>"; }).join("") + "</div></div>";
+        var ok = allowed(u);
+        return "<button class=\"g\" type=\"button\" data-act=\"fill\" data-u=\"" + esc(u.id) + "\" id=\"u_" + i + "\"" + (ok ? "" : " disabled title=\"Not in this Informer link's roles\"") + "><b>" + esc(u.id) + "</b><span class=\"sm muted\">" + esc(u.role) +
+          (u.judge ? " · can switch hospital" : " · " + esc(HOSP[u.site].name)) + (ok ? "" : " · locked by Informer role") + "</span></button>"; }).join("") + "</div></div>";
   }
   function tryLogin() {
     var em = ($("loginEmail").value || "").trim().toLowerCase(), pw = $("loginPass").value || "";
     var u = USERS.filter(function (x) { return x.id === em; })[0];
     if (!u) { $("loginErr").textContent = "No demo account with that email. Pick one from the list below."; return; }
+    if (!allowed(u)) { $("loginErr").textContent = "This Informer link does not include " + (u.judge ? "every hospital" : HOSP[u.site].name + (u.steward ? " (steward)" : "")) + ". Use an account it allows."; return; }
     if (pw !== DEMO_PASSWORD) { $("loginErr").textContent = "Wrong password. The demo password is shown below."; return; }
     signIn(u);
   }
