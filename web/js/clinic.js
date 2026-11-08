@@ -25,7 +25,7 @@
   function num(x) { return (Math.round(x * 100) / 100).toFixed(2); }
   var priorMode = "clinical", last = null;
   /* Optional team log, only in builds that set window.CLINIC_TEAM_LOG (the Informer app; deploy/informer/clinic_app).
-     Opt-in per case; stores no age, names, dates or record numbers. The standalone page never shows it. */
+     Opt-in per case; stores no patient identifiers (no age, names, birth dates or record numbers), only the user name and save time. The standalone page never shows it. */
   var TEAM_LOG = !!window.CLINIC_TEAM_LOG, LOG_URL = window.CLINIC_LOG_URL || "/api/_server/caselog";
 
   /* ---------------------------------------------------------------- inputs */
@@ -224,7 +224,7 @@
 
   function teamLog() {
     var box = document.createElement("div"); box.className = "note";
-    box.innerHTML = "<button class=\"g\" id=\"save\">Save to team log</button> <span id=\"saveMsg\"></span><div class=\"sm\" style=\"margin-top:6px\">Stores in your institution's Informer: grade, grade 4 flag, marker results, pending and unavailable tests, cost ratio and this tool's output, with your user name. Not stored: age, free text, names, dates or record numbers.</div><div id=\"teamSum\" class=\"sm\" style=\"margin-top:6px\"></div>";
+    box.innerHTML = "<button class=\"g\" id=\"save\">Save to team log</button> <span id=\"saveMsg\"></span><div class=\"sm\" style=\"margin-top:6px\">Stores in your institution's Informer: grade, grade 4 flag, marker results, pending and unavailable tests, cost ratio and this tool's output, with your user name and the time saved. No patient identifiers: no age, free text, names, birth dates or record numbers.</div><div id=\"teamSum\" class=\"sm\" style=\"margin-top:6px\"></div>";
     $("summaryCard").appendChild(box);
     $("save").addEventListener("click", function () {
       $("save").disabled = true;

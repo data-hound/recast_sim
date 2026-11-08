@@ -1,4 +1,4 @@
-// POST /api/_server/caselog : save one de-identified case (opt-in button in the page).
+// POST /api/_server/caselog : save one case without patient identifiers (opt-in button in the page).
 // GET  /api/_server/caselog : the 200 most recent cases of this app's workspace (team view).
 // Informer server-route contract (docs.entrinsik.com/developer/apps/reference/server-routes): one context object with
 // query(sql, params) and request {body, user, roles}. UNTESTED on an Informer server: we had no tenant when writing it.

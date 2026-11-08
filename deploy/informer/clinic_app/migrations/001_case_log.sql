@@ -1,4 +1,5 @@
--- Opt-in, de-identified team log of clinician-tool cases (no age, names, dates of birth, record numbers or free text).
+-- Opt-in team log of clinician-tool cases without patient identifiers (no age, names, dates of birth, record numbers or free text).
+-- Each row keeps the saving user's name and the save time.
 CREATE TABLE IF NOT EXISTS case_log (
   id          SERIAL PRIMARY KEY,
   username    TEXT NOT NULL,

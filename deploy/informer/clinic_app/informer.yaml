@@ -4,7 +4,7 @@ dependencies: {}
 roles:
   - id: clinician
     name: Clinician
-    description: Uses the tool and may save de-identified cases to the team log
+    description: Uses the tool and may save cases (no patient identifiers) to the team log
   - id: steward
     name: Stewardship lead
     description: Reviews the team log and its summary
