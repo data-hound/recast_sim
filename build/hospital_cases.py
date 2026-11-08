@@ -1,6 +1,8 @@
-"""Build the simulated-hospital cases (web/hospital/cases.json) from PUBLIC cBioPortal cohorts only.
+"""Build the simulated-hospital cases (cases.json) from PUBLIC cBioPortal cohorts only.
 
-    python build/hospital_cases.py          # GlioAgent venv; raw data from fetch_cbioportal.py
+    export RECAST_PRIVATE_ASSETS=/private/dir        # holds model.json (input) and receives cases.json (output); never inside this repo
+    export RECAST_RAW_CBIOPORTAL=/path/raw/cbioportal  # written by build/fetch_cbioportal.py
+    python build/hospital_cases.py                   # needs numpy
 
 Five fictional hospitals, each drawn from one TCGA contributing (tissue-source) site of the public lgggbm_tcga_pub cohort
 (the mapping to real sites is not shipped: the page only gets the fictional name and "public research cohort"). Markers the source did not report are
@@ -10,6 +12,7 @@ Daily Workup practice cases ("practice") come from external public cohorts only 
 """
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -17,10 +20,13 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from workup_pools import TESTS, age_band, load_cohort  # noqa: E402
+from cohort_loader import TESTS, age_band, load_cohort  # noqa: E402
 
-OUT = HERE.parent / "web" / "hospital" / "cases.json"
-MODEL = HERE.parent / "web" / "clinic" / "model.json"
+PRIVATE = os.environ.get("RECAST_PRIVATE_ASSETS")
+if not PRIVATE or not (Path(PRIVATE) / "model.json").is_file():
+    raise SystemExit("Set RECAST_PRIVATE_ASSETS to a private directory that contains model.json (not shipped in this repo).")
+OUT = Path(PRIVATE) / "cases.json"
+MODEL = Path(PRIVATE) / "model.json"
 SEED = 20261108
 BAND_AGE = {"<35": 30, "35-50": 42, "50-65": 57, "65+": 72, "?": None}
 

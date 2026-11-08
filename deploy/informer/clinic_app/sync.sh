@@ -3,16 +3,27 @@
 # Informer serves ONLY the App's root page for every view path, so the App is one page: web/hospital/index.html
 # (sign-in, then tabs: worklist with the GlioAgent assistant, clinician tool, Practice · Daily Workup, steward dashboard).
 # Its ../ paths are rewritten for the root, and config.js (team log on) is added.
+#
+# NOT in this repo: the fitted model (model.json) and the simulated cases (cases.json). They are read from a private
+# directory given by $RECAST_PRIVATE_ASSETS (must contain model.json and cases.json) and copied into public/, so they are
+# built into the deployed Informer App only. This script fails if the directory or either file is missing.
 set -e
 cd "$(dirname "$0")"; W=../../../web
+if [ -z "$RECAST_PRIVATE_ASSETS" ]; then
+  echo "sync.sh: RECAST_PRIVATE_ASSETS is not set. Point it at a private directory holding model.json and cases.json (not in this repo)." >&2; exit 1
+fi
+for f in model.json cases.json; do
+  [ -f "$RECAST_PRIVATE_ASSETS/$f" ] || { echo "sync.sh: missing $RECAST_PRIVATE_ASSETS/$f (model.json and cases.json are not shipped in this repo)" >&2; exit 1; }
+done
 rm -rf public/clinic public/hospital
 mkdir -p public/js public/css public/hospital
 cp $W/css/style.css public/css/style.css
 cp $W/clinic/clinic.css public/clinic.css
-cp $W/clinic/model.json public/model.json
+cp "$RECAST_PRIVATE_ASSETS/model.json" public/model.json
 cp $W/js/clinic_engine.js $W/js/clinic.js $W/js/hospital.js public/js/
 cp $W/favicon.svg public/favicon.svg
-cp $W/hospital/hospital.css $W/hospital/cases.json public/hospital/
+cp $W/hospital/hospital.css public/hospital/
+cp "$RECAST_PRIVATE_ASSETS/cases.json" public/hospital/cases.json
 sed -e 's#"\.\./clinic/clinic\.css"#"clinic.css"#; s#"\.\./clinic/model\.json"#"model.json"#; s#"\.\./#"#g' \
     -e 's#href="hospital\.css"#href="hospital/hospital.css"#; s#data-cases="cases\.json"#data-cases="hospital/cases.json"#' \
     -e 's#<script src="js/clinic_engine\.js"></script>#<script src="config.js"></script>\n<script src="js/clinic_engine.js"></script>#' \

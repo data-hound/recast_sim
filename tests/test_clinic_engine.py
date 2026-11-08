@@ -1,5 +1,7 @@
-"""Parity of web/js/clinic_engine.js (the clinician tool's planner) with the Python engine (node + GlioAgent venv):
+"""Parity of web/js/clinic_engine.js (the clinician tool's planner) with the Python engine (node + the private research environment):
 
+    export RECAST_PRIVATE_ASSETS=/private/dir   # holds model.json (not in this repo)
+    export GLIOAGENT_REPO=/path/to/glioagent    # PRIVATE reference implementation (glioagent.env, scripts/policy.py): not in this repo
     python tests/test_clinic_engine.py [--n 3000]
 
 Python (scripts/policy.py via glioagent.env, unchanged) generates every vector on exactly the inputs the JS receives:
@@ -19,7 +21,9 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, os.environ.get("GLIOAGENT_REPO", str(ROOT.parent / "recast_glioagent")))
+if not os.environ.get("GLIOAGENT_REPO") or not os.environ.get("RECAST_PRIVATE_ASSETS"):
+    raise SystemExit("This parity test needs GLIOAGENT_REPO (private reference engine) and RECAST_PRIVATE_ASSETS (model.json); neither ships with this repo.")
+sys.path.insert(0, os.environ["GLIOAGENT_REPO"])
 from glioagent.env import P, TESTS, agent_cap  # noqa: E402
 
 NODE = r"""
@@ -44,7 +48,7 @@ class _Env:
 
 
 def py_prior(counts, age, grade):
-    from workup_pools import age_band
+    from cohort_loader import age_band
     prev = np.array(counts["prev"]); pn = prev / prev.sum()
     a = np.array(counts["age"].get(age_band(age), [1, 1, 1])); g = np.array(counts["grade"].get(grade, [1, 1, 1]))
     w = (a / a.sum() / pn) * (g / g.sum() / pn) * pn
@@ -55,7 +59,7 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--n", type=int, default=3000); ap.add_argument("--seed", type=int, default=11)
     a = ap.parse_args(); rng = random.Random(a.seed); nrng = np.random.default_rng(a.seed)
     sys.path.insert(0, str(ROOT / "build"))
-    model = json.loads((ROOT / "web" / "clinic" / "model.json").read_text())
+    model = json.loads((Path(os.environ["RECAST_PRIVATE_ASSETS"]) / "model.json").read_text())
     assert model["yield"] == [1.0] * len(TESTS), "clinic model must have yield 1"
     L0 = np.array(model["L"]); V, want = [], []
     for i in range(a.n):
