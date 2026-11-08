@@ -16,6 +16,7 @@ team log's /api/_server/caselog requests are allowed (they 404 off Informer) and
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -257,10 +258,75 @@ def main():
         c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer2")); time.sleep(1.5)
         expect("informer owner (all roles): nothing locked, judge can sign in", c.ev("document.querySelectorAll('[data-act=fill][disabled]').length") == 0 and signin("judge"))
         c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=sid)
-        c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{username:'nosite'},roles:[]};")
+        sid = c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{username:'nosite'},roles:[]};")["identifier"]
         c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer3")); time.sleep(1.5)
         expect("informer without site role: empty email, all open, judge can sign in", c.ev("document.getElementById('loginEmail').value") == "" and
                c.ev("document.querySelectorAll('[data-act=fill][disabled]').length") == 0 and signin("judge"))
+        c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=sid)
+
+        # --- "Ask GlioAgent (Informer AI)": window.__INFORMER__.openChat({prompt, context, instructions}) + two page tools, de-identified
+        # Stub: records the openChat call and the registered tools; ipcRenderer stands in for the Informer host (the injected bridge only
+        # reaches the chat when a host page answers, so the button is hidden in a top-level tab).
+        STUB = ("window.__cap=null;window.__tools={};window.__INFORMER__={user:{username:'admin'},roles:[],"
+                "openChat:function(o){window.__cap=o;},registerTool:function(t){window.__tools[t.name]=t;}};")
+        HOST = "window.ipcRenderer={send:function(){},on:function(){}};"
+
+        def ask_page(src, seed):
+            i = c.call("Page.addScriptToEvaluateOnNewDocument", source=src)["identifier"]
+            c.call("Page.navigate", url=url.replace("seed=e2e", "seed=" + seed)); time.sleep(1.5)
+            ok = signin("judge") and click("#tab_tool"); time.sleep(0.3)
+            click("#ex1"); time.sleep(0.4)          # example 1: age 34, grade 2, R132H positive, ATRX lost (the age must never be sent)
+            return i, ok
+
+        i, ok = ask_page("window.__INFORMER__={user:{username:'admin'},roles:[]};", "ask1")
+        expect("ask: tool tab opens without openChat", bool(ok))
+        expect("ask: button hidden when __INFORMER__ has no openChat", not c.ev("!!document.getElementById('askAI')"))
+        c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=i)
+        i, ok = ask_page(STUB, "ask2")
+        expect("ask: box shown with the button DISABLED when openChat exists but no Informer host answers (share link / top-level tab)",
+               bool(ok) and c.ev("(function(){var b=document.getElementById('askAI'); return !!b && b.disabled;})()") is True and "inside Informer GO" in (text("#askBox") or ""))
+        click("#askAI"); time.sleep(0.2)
+        expect("ask: clicking the disabled button sends nothing, and the preview still shows what would be sent", c.ev("window.__cap") is None and
+               "histological_grade" in (c.ev("document.getElementById('askPreview').textContent") or ""))
+        c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=i)
+        i, ok = ask_page(STUB + HOST, "ask3")
+        expect("ask: button shown inside the Informer host", bool(ok) and c.ev("!!document.getElementById('askAI')") is True)
+        expect("ask: label says Informer AI and research prototype", "Informer AI" in (text("#askAI") or "") and "Research prototype, not for clinical use" in (text("#askBox") or ""))
+        prev = c.ev("(function(){var p=document.getElementById('askPreview'); return p ? p.textContent : '';})()") or ""
+        expect("ask: nothing sent before the click", c.ev("window.__cap") is None and c.ev("Object.keys(window.__tools).length") == 0)
+        click("#askAI"); time.sleep(0.3)
+        cap = json.loads(c.ev("JSON.stringify(window.__cap)") or "null")
+        raw = json.dumps(cap)
+        expect("ask: openChat called with prompt, context and instructions", bool(cap) and all(isinstance(cap.get(k), (str, dict)) and cap.get(k) for k in ("prompt", "context", "instructions")), raw[:200])
+        ctx = (cap or {}).get("context") or {}
+        expect("ask: context carries grade, results, evidence and planner",
+               ctx.get("histological_grade") == "2" and [r["id"] for r in ctx.get("reported_results", [])] == ["ihc", "atrx"] and
+               ctx.get("cns5_evidence", {}).get("supported") is True and "Astrocytoma" in ctx.get("cns5_evidence", {}).get("diagnosis", "") and
+               ctx.get("surrogate_warning") is True and "planner" in ctx, raw[:300])
+        leaks = [x for x in ("34", "age 3", "<35", "35-50", "50-65", "65+", "clinical model", "your own estimate", "Case summary", "tumour board") if x in raw]
+        leaks += re.findall(r"\bAge\b", raw)       # the summary starts "Age 34;" ("GlioAgent" is not a hit)
+        expect("ask: no age, age band, prior label or free-text summary in anything sent", not leaks, str(leaks))
+        expect("ask: the preview shows exactly what is sent", json.loads(prev) == ctx)
+        expect("ask: two page tools registered (getCase, whatIf)", c.ev("Object.keys(window.__tools).sort().join()") == "getCase,whatIf")
+        gc = c.ev("JSON.stringify(window.__tools.getCase.handler())")
+        expect("ask: getCase returns the same de-identified case", json.loads(gc) == ctx)
+        wi = json.loads(c.ev("JSON.stringify(window.__tools.whatIf.handler({test:'codel',result:1}))"))
+        expect("ask: whatIf codel = codeleted -> oligodendroglioma supported, no surrogate warning",
+               "Oligodendroglioma" in wi["cns5_evidence"].get("diagnosis", "") and wi["surrogate_warning"] is False and "hypothetical" in wi.get("what_if", ""), json.dumps(wi)[:300])
+        wi0 = json.loads(c.ev("JSON.stringify(window.__tools.whatIf.handler({test:'codel',result:0}))"))
+        expect("ask: whatIf codel = intact -> astrocytoma supported on 1p/19q intact", "1p/19q intact" in wi0["cns5_evidence"].get("basis", "") and wi0["surrogate_warning"] is False, json.dumps(wi0)[:300])
+        bad = json.loads(c.ev("JSON.stringify(window.__tools.whatIf.handler({test:'ihc',result:0}))"))
+        expect("ask: whatIf refuses a test that already has a result, and a bad test name", "already has a reported result" in bad.get("error", "") and
+               "error" in json.loads(c.ev("JSON.stringify(window.__tools.whatIf.handler({test:'zzz',result:1}))")))
+        expect("ask: whatIf leaves the screen unchanged", json.loads(c.ev("JSON.stringify(window.__tools.getCase.handler())")) == ctx)
+        click("#ex3"); time.sleep(0.4)   # example 3: R132H positive, ATRX retained, 1p/19q not available here
+        c.ev("(function(){var e=document.getElementById('age'); e.value='71'; e.dispatchEvent(new Event('input',{bubbles:true}));})()"); time.sleep(0.3)
+        gc3 = json.loads(c.ev("JSON.stringify(window.__tools.getCase.handler())"))
+        shown = text("#nextCard .big") or ""
+        expect("ask: planner pick in the packet equals the one on screen (and 'unavailable' lists 1p/19q)",
+               gc3["planner"].get("status") == "order next" and shown == "Order next: " + gc3["planner"]["next_test"] + " cost " + str(gc3["planner"]["cost"]) and
+               "1p/19q" in gc3["unavailable_at_site"], shown + " | " + json.dumps(gc3["planner"]))
+        c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=i)
 
         c.drain(1.0)
         reqs = [e["params"]["request"]["url"] for e in c.events if e.get("method") == "Network.requestWillBeSent"]

@@ -7,7 +7,7 @@
     "sync": "sh sync.sh",
     "dev": "sh sync.sh && vite",
     "build": "sh sync.sh && vite build",
-    "deploy": "npm run build && informer-deploy",
+    "deploy": "npm run build && informer-deploy && sh stop_huddle.sh",
     "workspace:init": "informer-workspace init",
     "workspace:migrate": "informer-workspace migrate"
   },

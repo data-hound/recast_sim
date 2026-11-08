@@ -220,12 +220,103 @@
     $("summaryCard").innerHTML = "<h2>Summary for the tumour board</h2><textarea class=\"sum\" id=\"sumtxt\" readonly></textarea><button class=\"g\" id=\"copy\">Copy</button>";
     $("sumtxt").value = lines.join("\n");
     $("copy").addEventListener("click", function () { $("sumtxt").select(); try { document.execCommand("copy"); } catch (e) { /* select is enough */ } $("copy").textContent = "Copied"; });
+    cur = {grade: st.grade, g4: g4, r: st.r, o: o, avail: st.avail, cfg: st.cfg, w: w, pending: st.pending};
+    askBox();
     if (TEAM_LOG) teamLog();
+  }
+
+  /* ---------------------------------------------------------------- Ask GlioAgent (Informer AI)
+     Inside Informer only: window.__INFORMER__.openChat({prompt, context, instructions}) opens Informer's chat panel (the host
+     page; docs.entrinsik.com/developer/apps/tutorials/ai-enhanced-dashboard, server-injected bridge). The packet sent is built
+     from the marker results, grade, flags, evidence status and the planner's pick ONLY: never the age, the prior label (it
+     names the age band), the probabilities (they are shaped by the age), the free-text summary or anything typed by hand.
+     Two page tools let the chat re-run the planner on this case (report_getCase, report_whatIf); they return the same packet. */
+  var cur = null, askToolsDone = false;
+  /* "live" = inside Informer's host (the chat can open); "preview" = openChat exists but nothing answers (a share link or tab opened at top
+     level: the injected openChat would drop the message), so the box is shown with the button disabled; null = no openChat, nothing shown. */
+  function askMode() {
+    var I = window.__INFORMER__;
+    if (!(I && typeof I.openChat === "function")) return null;
+    return (window.parent !== window || window.opener || window.ipcRenderer) ? "live" : "preview";
+  }
+  function plan(o, g4, w, cfg, pending, sup) {
+    if (sup >= 0) return {status: "no further test needed for the CNS5 class"};
+    var d = E.dpChoose(w, o, g4, M.L, cfg);
+    if (d.j != null) return {status: "order next", next_test: INFO[T[d.j]][0], test_id: T[d.j], cost: E.cost(cfg, T[d.j]),
+                             expected_further_cost: +num(d.v), cost_units: "stain = 1, molecular = " + cfg.r};
+    if (pending.length) return {status: "wait for the pending results", pending: pending.map(function (t) { return INFO[t][0]; })};
+    return {status: "CNS5 diagnosis not reachable with the tests available here: diffuse glioma, NOS"};
+  }
+  function packet(c) {
+    var o = c.o, res = [], sup = E.support(o, c.g4, c.cfg);
+    T.forEach(function (t, j) { if (o[j] === 0 || o[j] === 1) res.push({id: t, test: INFO[t][0], result: INFO[t][o[j] === 1 ? 2 : 1]}); });
+    return {
+      note: "De-identified case from the GlioAgent clinician tool. Research prototype, not for clinical use. No age, names, dates or record numbers.",
+      histological_grade: c.grade === "?" ? "unknown" : c.grade, grade4_features: c.g4,
+      reported_results: res,
+      pending_tests: c.pending.map(function (t) { return INFO[t][0]; }),
+      unavailable_at_site: T.filter(function (t) { return c.avail.indexOf(t) < 0; }).map(function (t) { return INFO[t][0]; }),
+      molecular_to_stain_cost_ratio: c.r,
+      cns5_evidence: sup >= 0 ? {supported: true, diagnosis: FULL[sup], basis: reason(o, c.g4, sup)} : {supported: false},
+      surrogate_warning: sup === 1 && o[4] !== 0 && o[4] !== 1,
+      planner: plan(o, c.g4, c.w, c.cfg, c.pending, sup)
+    };
+  }
+  var ASK_PROMPT = "Explain this de-identified glioma workup case for a clinician. (1) Is the WHO CNS5 evidence complete, and which diagnosis does it support or what is missing? " +
+    "(2) Why does the planner suggest its next test, and what would each possible result change? (3) Any caution, especially the ATRX/p53 surrogate. " +
+    "Call report_getCase for the case and report_whatIf to test a hypothetical result; do not guess results. Do not give treatment or clinical advice.";
+  var ASK_INSTRUCTIONS = "You are GlioAgent's explainer inside a research prototype (not for clinical use). Explain; never advise on diagnosis, treatment, prognosis or referral. " +
+    "Use only the case context and the report_getCase / report_whatIf tool outputs; never invent or assume a result, and say when something is missing. " +
+    "Evidence rule (the rule decides, probabilities do not): glioblastoma IDH-wildtype needs IDH-wildtype by sequencing (a negative R132H stain is not enough) plus grade 4 histology or TERT, +7/-10 or EGFR; " +
+    "astrocytoma IDH-mutant needs IDH-mutant plus 1p/19q intact, or the CAP surrogate (ATRX loss or p53 mutant pattern) with 1p/19q untested; oligodendroglioma needs IDH-mutant plus 1p/19q codeleted. " +
+    "The planner is an exact dynamic program that orders the test with the lowest expected further cost (stain = 1, molecular = the cost ratio) to reach a supported diagnosis, or reports NOS. " +
+    "The ATRX/p53 shortcut caused every wrong diagnosis in the GlioAgent evaluation: say so when it applies. Keep it under 200 words and end with: Research prototype, not for clinical use. " +
+    "If the user types anything that looks like a patient identifier, tell them not to share it.";
+  function registerAskTools() {
+    var I = window.__INFORMER__;
+    if (askToolsDone || typeof I.registerTool !== "function") return;
+    askToolsDone = true;
+    I.registerTool({name: "getCase", description: "The de-identified case currently on screen in the GlioAgent clinician tool: grade, grade-4 flag, reported results, pending and unavailable tests, WHO CNS5 evidence status and the planner's next test with its expected further cost. Read-only.",
+      schema: {type: "object", properties: {}, additionalProperties: false},
+      handler: function () { return cur ? packet(cur) : {error: "no case on screen"}; }});
+    I.registerTool({name: "whatIf", description: "Re-run the evidence rule and the exact planner on the case on screen with ONE extra hypothetical result (result 1 = positive/mutant/lost/codeleted/present, 0 = negative/wild-type/retained/intact/absent). Nothing on screen changes. Use it to explain what a pending or possible test would change; it is a what-if, not a result.",
+      schema: {type: "object", properties: {test: {type: "string", enum: T.slice()}, result: {type: "integer", enum: [0, 1]}}, required: ["test", "result"], additionalProperties: false},
+      handler: function (a) {
+        if (!cur) return {error: "no case on screen"};
+        var t = a && a.test, v = a && +a.result, j = E.TI[t];
+        if (j == null || (v !== 0 && v !== 1)) return {error: "test must be one of " + T.join(", ") + " and result 0 or 1"};
+        if (cur.o[j] === 0 || cur.o[j] === 1) return {error: INFO[t][0] + " already has a reported result; a what-if applies only to tests not yet reported"};
+        var o = cur.o.slice(); o[j] = v;
+        var c = {grade: cur.grade, g4: cur.g4, r: cur.r, o: o, avail: cur.avail, cfg: cur.cfg, w: E.update(cur.w, M.L, j, v),
+                 pending: cur.pending.filter(function (x) { return x !== t; })};
+        var out = packet(c); out.what_if = INFO[t][0] + " " + INFO[t][v === 1 ? 2 : 1] + " (hypothetical, not a reported result)";
+        return out;
+      }});
+  }
+  function askBox() {
+    var mode = askMode();
+    if (!mode || !cur) return;
+    var box = document.createElement("div"); box.className = "note"; box.id = "askBox";
+    box.innerHTML = "<button class=\"g\" id=\"askAI\"" + (mode === "live" ? "" : " disabled") + ">Ask GlioAgent (Informer AI)</button> <span id=\"askMsg\">" +
+      (mode === "live" ? "" : "Opens Informer's AI chat when this App is opened inside Informer GO (not in a plain browser tab).") + "</span>" +
+      "<div class=\"sm\" style=\"margin-top:6px\">Opens Informer's chat with this case as context: grade, grade 4 flag, reported results, pending and unavailable tests, the CNS5 evidence status and the planner's next test. " +
+      "No age, names, dates, record numbers or typed text are sent, and the chat can re-run the planner on this case through two read-only page tools. It explains; it does not advise, and AI answers can be wrong. " +
+      "Uses Informer AI credits. Research prototype, not for clinical use.</div>" +
+      "<details class=\"sm\"><summary>Show exactly what is sent</summary><pre id=\"askPreview\" style=\"white-space:pre-wrap;margin:6px 0 0\"></pre></details>";
+    $("summaryCard").appendChild(box);
+    $("askPreview").textContent = JSON.stringify(packet(cur), null, 1);
+    $("askAI").addEventListener("click", function () {
+      try {
+        registerAskTools();
+        window.__INFORMER__.openChat({prompt: ASK_PROMPT, context: packet(cur), instructions: ASK_INSTRUCTIONS});
+        $("askMsg").textContent = "Sent to the Informer chat panel. If nothing opens, open this App inside Informer (the chat needs its app shell).";
+      } catch (e) { $("askMsg").textContent = "Could not open the chat (" + (e && e.message || e) + ")."; }
+    });
   }
 
   function teamLog() {
     var box = document.createElement("div"); box.className = "note";
-    box.innerHTML = "<button class=\"g\" id=\"save\">Save to team log</button> <span id=\"saveMsg\"></span><div class=\"sm\" style=\"margin-top:6px\">Stores in your institution's Informer: grade, grade 4 flag, marker results, pending and unavailable tests, cost ratio and this tool's output, with your user name and the time saved. No patient identifiers: no age, free text, names, birth dates or record numbers.</div><div id=\"teamSum\" class=\"sm\" style=\"margin-top:6px\"></div>";
+    box.innerHTML = "<button class=\"g\" id=\"save\">Save to team log</button> <span id=\"saveMsg\"></span><div class=\"sm\" style=\"margin-top:6px\">Stores in your institution's Informer: grade, grade 4 flag, marker results, pending and unavailable tests, cost ratio and this tool's output, with your user name and the time saved. No patient identifiers: no age, free text, names, birth dates or record numbers.</div><div id=\"teamSum\" class=\"sm\" style=\"margin-top:6px\"></div><div id=\"huddle\" class=\"sm\" style=\"margin-top:6px\"></div>";
     $("summaryCard").appendChild(box);
     $("save").addEventListener("click", function () {
       $("save").disabled = true;
@@ -237,12 +328,23 @@
     loadTeam();
   }
 
+  var huddleHtml = null, huddleAsked = false;
   function loadTeam() {
     fetch(LOG_URL + "/summary", {credentials: "same-origin"}).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d || !$("teamSum")) return;
       $("teamSum").innerHTML = "<b>Team log</b>: " + d.cases + " cases · astrocytoma on the ATRX/p53 surrogate alone: " + d.surrogate +
         " · NOS with local tests: " + d.nos + (d.next && d.next.length ? " · most recommended next tests: " + d.next.map(function (x) { return esc(INFO[x.test] ? INFO[x.test][0] : x.test) + " " + x.n; }).join(", ") : "");
     }).catch(function () { /* summary is optional */ });
+    /* Latest morning-huddle digest written by the stewardship agent (Informer agent morning-huddle; counts only; null until it has run). Fetched once. */
+    if ($("huddle") && huddleHtml) $("huddle").innerHTML = huddleHtml;
+    if (huddleAsked) return;
+    huddleAsked = true;
+    fetch(LOG_URL + "/huddle", {credentials: "same-origin"}).then(function (r) { return r.ok ? r.json() : null; }).then(function (h) {
+      if (!h || !h.body) return;
+      huddleHtml = "<b>Morning huddle</b> <span class=\"muted\">(written by the Informer morning-huddle agent, " + esc(String(h.created).slice(0, 16).replace("T", " ")) +
+        " UTC; counts only, check against the log)</span><div style=\"margin-top:4px;white-space:pre-wrap\">" + esc(h.body) + "</div>";
+      if ($("huddle")) $("huddle").innerHTML = huddleHtml;
+    }).catch(function () { /* digest is optional */ });
   }
 
   function how() {
@@ -252,6 +354,7 @@
       "<li><b>Next test.</b> An exact planner (dynamic programming) picks the test with the lowest expected cost to reach a supported diagnosis, given your results, the tests your site has, and your molecular-to-stain cost ratio. It is the RECAST v2 planner, ported line by line and checked against the Python original.</li>" +
       "<li><b>GlioAgent.</b> RECAST's language-model agent (Qwen3-8B), trained to imitate this planner and then with reinforcement learning, matches it: −3.92 vs −3.89 on 644 held-out TCGA patients, −3.59 vs −3.61 on 917 patients from three other cohorts, about 0.9 better than a CAP-style pathway. This page uses the planner itself: it is exact, free and auditable.</li>" +
       "<li><b>Model.</b> Fitted on " + s.n + " adults from the public " + esc(s.name) + " (" + esc(s.citation) + "). " + esc(s.notes.join(" ")) + " Licence: " + esc(s.licence) + ".</li>" +
+      (TEAM_LOG ? "<li><b>Informer agents.</b> Built into this Informer App: a <i>case explainer</i> agent (run by an App admin) and a weekday <i>morning huddle</i> agent that digests the team log (deployed stopped, so it spends nothing on a schedule). Both call the same planner and the read-only team-log counts as tools. The <i>Ask GlioAgent</i> button opens Informer's chat with a de-identified case and two read-only tools. They explain; they do not advise.</li>" : "") +
       "<li><b>Limits.</b> Three classes only; no grading, NOS/NEC, paediatric-type or IDH-wildtype non-GBM entities; no reflex panels, turnaround times or tissue limits; costs are relative units. Not validated prospectively.</li></ul>";
   }
 

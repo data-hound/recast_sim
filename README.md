@@ -5,9 +5,9 @@
 GlioAgent Workup is a browser app for the WHO CNS5 adult diffuse glioma workup. It has:
 - a **clinician tool** (`web/clinic/`): enter a case, see class probabilities, evidence status and the cost-optimal next test (a line-for-line JavaScript port of the research planner, `web/js/clinic_engine.js`);
 - a **hospital simulation** (`web/hospital/`): five fictional hospitals with a compressed clock, a worklist with the assistant, a "Practice - Daily Workup" game and a steward dashboard;
-- an **Informer App wrapper** (`deploy/informer/clinic_app/`): packages the same pages as an Entrinsik Informer App, with one optional server route (an opt-in team log without patient identifiers).
+- an **Informer App wrapper** (`deploy/informer/clinic_app/`): packages the same pages as an Entrinsik Informer App, with an optional server part: an opt-in team log without patient identifiers, plus two Informer agents and their tools (see "Informer AI features").
 
-All planning runs in the browser. The only server code is the team log in `deploy/informer/clinic_app/server/caselog/`.
+All planning runs in the browser. The server code is the team log in `deploy/informer/clinic_app/server/caselog/` and the agent tools in `deploy/informer/clinic_app/tools/` (read-only counts, the planner, and a digest save).
 
 ## What is NOT in this repository (by design)
 
@@ -66,19 +66,35 @@ npm run dev                                # local page, /api proxied to the ten
 npm run workspace:init && npm run workspace:migrate   # first time only: the app's Postgres workspace
 npm run deploy                             # sync.sh + vite build + upload + migrate + publish
 ```
-- `sync.sh` copies `model.json` and `cases.json` from `RECAST_PRIVATE_ASSETS` into `public/`, so they are uploaded as part of `dist/` and live in the App only. It fails if the variable or either file is missing.
+- `sync.sh` copies `model.json` and `cases.json` from `RECAST_PRIVATE_ASSETS` into `public/`, so they are uploaded as part of `dist/` and live in the App only. It also generates `lib/model.js` and `lib/clinic_engine.js` (the agents' `plan_next_test` tool imports them; both are git-ignored and must never be committed). It fails if the variable or either file is missing.
+- `npm run deploy` ends with `stop_huddle.sh`, because an Informer deploy sets the morning-huddle agent back to active. If you deploy with `inf deploy` instead, run `sh stop_huddle.sh` yourself afterwards. The script needs `informer.id` in `package.json`, which the first deploy writes.
 - The first deploy from a fresh clone creates a new App. `npm run deploy` writes `informer.id` into `package.json`; keep that change out of commits (it is tenant-specific).
 - Roles (`informer.yaml`): one `site_*` role per simulated hospital, and `steward`. A hospital is a role: the publisher assigns one `site_*` role per demo user when sharing the App.
+
+## Informer AI features
+
+These run only in the deployed Informer App, never in a local `run_local.sh` session. None of them gives clinical advice, and no patient identifiers are sent to any AI.
+- **Case-explainer agent** (`case-explainer`): explains one de-identified case (the CNS5 evidence status, why the planner picks its next test, what each outcome would change, the surrogate warning) by calling the `plan_next_test` tool, which runs the same planner and model as the page. **Run manually only** (App Admin > Agents, or `POST /api/apps/{id}/agents/{agentId}/_trigger` with `{"payload":{"case":{...}}}`); it has no schedule.
+- **"Ask GlioAgent (Informer AI)" chat box** (clinician tool tab): opens Informer's chat with a de-identified case packet only (grade, reported results, pending and unavailable tests, cost ratio). It sends no age, no probabilities and no typed text, and the page shows exactly what is sent. When the page is not running inside an Informer host (for example a top-level share-link tab) the box is shown with its button disabled.
+- **Morning-huddle agent** (`morning-huddle`): a weekday digest of the team case log (counts only), saved with the `save_huddle` tool and shown under the team-log summary. It is **deployed stopped**, because its cron schedule (`30 7 * * 1-5`) would spend AI credits. Start it deliberately in App Admin > Agents.
+- **Credits:** all of this draws on the tenant's Informer AI credits (the agents use Informer's `go_everyday` model tier); each agent run and each chat uses credits.
+
+### Setting NVIDIA_API_KEY
+
+`informer.yaml` declares the environment key `NVIDIA_API_KEY` by name only. The agents and the chat box above run on Informer's own AI and do not use it; no code in this repository calls NVIDIA yet. If you add a route that does, set the value in the deployed App, never in a file:
+- in the Informer UI under **Admin > Environment**, or
+- with `PUT /api/apps/{id}/environment/NVIDIA_API_KEY` (the value is encrypted at rest and never returned by the API).
 
 ## Where secrets and weights live
 
 | Item | Where it lives | How it gets there |
 |---|---|---|
 | `model.json`, `cases.json` | The deployed Informer App (static files in the App bundle) | `RECAST_PRIVATE_ASSETS` -> `sync.sh` -> `npm run deploy` |
-| API keys (for example a future NVIDIA NIM key) | The Informer App's encrypted environment | Declare the key name in `informer.yaml` under `env:`; the installer enters the value in the App's Admin > Environment tab (or `PUT /apps/{id}/environment/{KEY}`); route code reads `env.KEY` |
+| API keys (`NVIDIA_API_KEY`, declared but not yet used) | The Informer App's encrypted environment | The key name is declared in `informer.yaml` under `env:`; the installer enters the value in Admin > Environment (or `PUT /api/apps/{id}/environment/{KEY}`); route code reads `env.KEY` |
+| `lib/model.js`, `lib/clinic_engine.js` | Generated by `sync.sh` and bundled into the deployed agent tools; git-ignored | `RECAST_PRIVATE_ASSETS/model.json` -> `sync.sh` |
 | Informer sign-in | `inf login` (or a git-ignored `.env`) | Never committed |
 
-Source for the environment mechanism: https://docs.entrinsik.com/developer/api/app/environment ("encrypted at rest", "never returned by the API", handlers receive `env`), and the server-route handler bag in https://docs.entrinsik.com/developer/api/app/server-routes. This app does not currently call any external model API, so `informer.yaml` declares no `env:` keys.
+Source for the environment mechanism: https://docs.entrinsik.com/developer/api/app/environment ("encrypted at rest", "never returned by the API", handlers receive `env`), and the server-route handler bag in https://docs.entrinsik.com/developer/api/app/server-routes. This app does not currently call any external model API: `informer.yaml` declares `NVIDIA_API_KEY` by name only (no value), and the Informer agents use Informer's own AI.
 
 ## Data licence and attribution
 

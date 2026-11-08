@@ -39,6 +39,9 @@ deploy/informer/clinic_app/public/js/
 deploy/informer/clinic_app/public/clinic.css
 deploy/informer/clinic_app/public/clinic/
 deploy/informer/clinic_app/public/favicon.svg
+deploy/informer/clinic_app/lib/
+**/lib/model.js
+**/lib/clinic_engine.js
 # --- Test output ---
 shots/
 *.png

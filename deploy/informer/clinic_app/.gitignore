@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+public/css/
+public/js/
+public/model.json
+public/clinic.css
+public/clinic/
+public/hospital/
+public/favicon.svg
+lib/clinic_engine.js
+lib/model.js
