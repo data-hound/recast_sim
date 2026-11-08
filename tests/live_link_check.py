@@ -1,6 +1,10 @@
-"""Headless check of the deployed App through a real Informer share link. URL comes from env LINK_URL (never printed)."""
+"""Headless check of the deployed App through a real Informer share link (GET-only browsing; signs in with a demo persona).
+
+    LINK_URL=<share link URL from GET /api/apps/<app>/tokens> python tests/live_link_check.py SHOTDIR
+The URL contains the link's secret key: never print, log or commit it.
+"""
 import json, os, subprocess, sys, tempfile, time, shutil, urllib.request
-sys.path.insert(0, "/home/anshuman/ASDev/CancerML/RECAST/arcade/tests")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_chrome import CDP
 url = os.environ["LINK_URL"]; shots = sys.argv[1]; os.makedirs(shots, exist_ok=True); port = 9351
 prof = tempfile.mkdtemp()
