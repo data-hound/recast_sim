@@ -3,30 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GlioAgent Hospital simulation</title>
+<title>GlioAgent Workup: sign in</title>
 <link rel="stylesheet" href="../css/style.css">
 <link rel="stylesheet" href="../clinic/clinic.css">
 <link rel="stylesheet" href="hospital.css">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 </head>
-<body>
+<!-- One page for everything (Informer serves only the App's root page): sign-in, then tabs for the hospital worklist with
+     the GlioAgent assistant, the clinician tool, Practice (Daily Workup) and, for stewards, the site dashboard.
+     data-model / data-cases are the data URLs relative to this page; deploy/informer/clinic_app/sync.sh rewrites them. -->
+<body data-model="../clinic/model.json" data-cases="cases.json">
 <header>
-  <div class="brand">GlioAgent <b>Hospital</b> · simulation</div>
+  <div class="brand">GlioAgent <b>Workup</b></div>
   <div class="hinfo" id="hinfo" hidden>
     <span id="who" class="hwho"></span>
     <span id="hname" class="hname"></span>
     <span id="hclock" class="hclock" title="Simulated clock"></span>
     <button class="g hnext" id="nextBtn" data-act="next" title="Jump the simulated clock to the next pending result">⏩ Next result</button>
   </div>
-  <nav class="cnav"><a href="../clinic/">Clinician tool</a><a href="../">Path Arcade</a><a href="#" id="logout" data-act="logout" hidden>Sign out</a></nav>
+  <nav class="cnav"><a href="#" id="logout" data-act="logout" hidden>Sign out</a></nav>
 </header>
 <main class="clinic hosp">
-  <div class="banner" role="note"><b>Simulation for demonstration: fictional hospitals, public research cases, compressed time. Not for clinical decisions.</b></div>
+  <div class="banner" role="note"><b>Research prototype and simulation: fictional hospitals, public research cases, compressed time. Not for clinical decisions.</b></div>
   <div class="tabs" id="tabs" hidden></div>
   <div id="view"><div class="card">Loading the public model and simulated cases…</div></div>
 </main>
+<main class="clinic" id="toolPane" hidden>
+  <div class="note" role="note">Clinician tool: enter any case. Nothing you enter leaves this browser<span class="teamlog-note"> unless you press <i>Save to team log</i> (Informer build only), which stores marker results without patient identifiers plus your user name and the save time</span>.</div>
+  <div class="cols">
+    <section class="col" id="inputs">
+      <div class="card">
+        <h2>Case</h2>
+        <div class="ex" id="examples"><span class="sm muted">Examples:</span></div>
+        <div class="grid2">
+          <label>Age (years)<input id="age" type="number" min="18" max="100" placeholder="e.g. 54"></label>
+          <label>Histological grade<select id="grade"><option value="?">unknown</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+        </div>
+        <label class="chk"><input id="g4" type="checkbox"> Histology shows glioblastoma / grade 4 features (necrosis or microvascular proliferation)</label>
+        <h3>Starting probabilities</h3>
+        <div class="seg" id="priorMode"><button class="g sel" data-m="clinical">Clinical model (age + grade)</button><button class="g" data-m="custom">My own estimate</button></div>
+        <div id="customPrior" hidden>
+          <div class="grid3"><label>GBM %<input id="pg" type="number" min="0" max="100" value="34"></label><label>Astro %<input id="pa" type="number" min="0" max="100" value="33"></label><label>Oligo %<input id="po" type="number" min="0" max="100" value="33"></label></div>
+          <div class="sm muted">For example a slide-model output or your own judgement. Each class is kept at 1% or more and the three are rescaled to 100%.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Results so far</h2>
+        <table class="res" id="results"></table>
+      </div>
+      <div class="card">
+        <h2>Your site</h2>
+        <label>Cost of a molecular test relative to a stain<select id="r"><option value="1.5">1.5×</option><option value="3" selected>3× (default)</option><option value="5">5×</option><option value="10">10× (send-out)</option></select></label>
+        <div class="sm muted" style="margin:6px 0 4px">Tests available here (untick what your site cannot run or send out):</div>
+        <div id="avail" class="avail"></div>
+      </div>
+    </section>
+    <section class="col" id="out">
+      <div class="card" id="postCard"></div>
+      <div class="card" id="evidenceCard"></div>
+      <div class="card" id="nextCard"></div>
+      <div class="card" id="pendingCard" hidden></div>
+      <div class="card" id="txCard" hidden></div>
+      <div class="card" id="summaryCard"></div>
+    </section>
+  </div>
+  <div class="card" id="how"></div>
+</main>
 <footer>Research prototype from RECAST v2 (Track 2, GlioAgent). Fictional hospitals; cases from public research cohorts. Not medical advice. Not a medical device.</footer>
 <script src="../js/clinic_engine.js"></script>
+<script src="../js/clinic.js"></script>
 <script src="../js/hospital.js"></script>
 </body>
 </html>

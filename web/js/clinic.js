@@ -27,6 +27,7 @@
   /* Optional team log, only in builds that set window.CLINIC_TEAM_LOG (the Informer app; deploy/informer/clinic_app).
      Opt-in per case; stores no patient identifiers (no age, names, birth dates or record numbers), only the user name and save time. The standalone page never shows it. */
   var TEAM_LOG = !!window.CLINIC_TEAM_LOG, LOG_URL = window.CLINIC_LOG_URL || "/api/_server/caselog";
+  if (TEAM_LOG && document.body) document.body.classList.add("teamlog");
 
   /* ---------------------------------------------------------------- inputs */
   function buildInputs() {
@@ -254,7 +255,7 @@
       "<li><b>Limits.</b> Three classes only; no grading, NOS/NEC, paediatric-type or IDH-wildtype non-GBM entities; no reflex panels, turnaround times or tissue limits; costs are relative units. Not validated prospectively.</li></ul>";
   }
 
-  fetch("model.json").then(function (r) { return r.json(); }).then(function (m) {
+  fetch(document.body.getAttribute("data-model") || "model.json").then(function (r) { return r.json(); }).then(function (m) {
     M = m; buildInputs(); how(); render();
   }).catch(function (e) { $("postCard").textContent = "Could not load the model: " + e; });
 })();

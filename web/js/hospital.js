@@ -6,7 +6,7 @@
   "use strict";
   var SECONDS_PER_DAY = 60;                 // real seconds per simulated day (override with ?speed=N)
   var START_MIN = 8 * 60, DAY = 1440, MAX_CASES = 12, FIRST_CASES = 3, KEY = "hosp_sim_v1";
-  var E = window.ClinicEngine, T = E.TESTS, M = null, D = null, HOSP = {}, ALL = [];
+  var E = window.ClinicEngine, T = E.TESTS, M = null, D = null, HOSP = {}, ALL = [], PR = [], IU = null;
   var INFO = {
     ihc: ["IDH1 R132H IHC", "negative", "positive"], seq: ["IDH1/2 sequencing", "wild-type", "mutant"],
     atrx: ["ATRX IHC", "retained", "lost"], tp53: ["p53 IHC", "wild-type pattern", "mutant pattern"],
@@ -17,11 +17,15 @@
   var SHORT = ["GBM", "Astro", "Oligo"];
   var FULL = ["Glioblastoma, IDH-wildtype", "Astrocytoma, IDH-mutant", "Oligodendroglioma, IDH-mutant and 1p/19q-codeleted"];
   var PREFIX = {lakeside: "LK", riverbend: "RB", harbor: "HP", northgate: "NG", valley: "VC"};
-  var USERS = [
-    {id: "clin.lakeside", role: "Clinician", site: "lakeside"}, {id: "clin.riverbend", role: "Clinician", site: "riverbend"},
-    {id: "clin.harbor", role: "Clinician", site: "harbor"}, {id: "clin.northgate", role: "Clinician", site: "northgate"},
-    {id: "clin.valley", role: "Clinician", site: "valley"}, {id: "steward.lakeside", role: "Data steward", site: "lakeside", steward: true},
-    {id: "judge", role: "Judge (any hospital)", site: "lakeside", steward: true, judge: true}];
+  /* Demo accounts: fictional hospitals on reserved ".example" domains (RFC 2606), so no address can belong to a real site.
+     The password is shown on the sign-in page: this sign-in picks a simulated persona; it is not a security boundary
+     (on Informer, the real access control is Informer's own sign-in and the App's roles). */
+  var DOMAIN = {lakeside: "lakeside-general.example", riverbend: "riverbend-university.example", harbor: "harborpoint-cancer.example",
+                northgate: "northgate-regional.example", valley: "valley-community.example"};
+  var DEMO_PASSWORD = "demo";
+  var USERS = Object.keys(DOMAIN).map(function (h) { return {id: "dummy_clinician@" + DOMAIN[h], role: "Clinician", site: h}; }).concat([
+    {id: "dummy_steward@" + DOMAIN.lakeside, role: "Data steward", site: "lakeside", steward: true},
+    {id: "judge@glioagent-demo.example", role: "Judge (any hospital)", site: "lakeside", steward: true, judge: true}]);
 
   var qs = {};
   location.search.replace(/^\?/, "").split("&").forEach(function (kv) { var p = kv.split("="); if (p[0]) qs[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || ""); });
@@ -179,7 +183,7 @@
   /* ---------------------------------------------------------------- header, tabs */
   function renderHeader() {
     var signed = !!(S && S.user && S.hid);
-    $("hinfo").hidden = !signed; $("tabs").hidden = !signed; $("logout").hidden = !(S && S.user) || !!S.user.informer;
+    $("hinfo").hidden = !signed; $("tabs").hidden = !signed; $("logout").hidden = !(S && S.user);
     if (!signed) return;
     $("who").innerHTML = "<b>" + esc(S.user.name) + "</b> · " + esc(S.user.role);
     var sel = "";
@@ -188,11 +192,12 @@
         return "<option value=\"" + esc(h.id) + "\"" + (h.id === S.hid ? " selected" : "") + ">" + esc(h.name) + "</option>"; }).join("") + "</select>";
       $("hname").innerHTML = sel;
     } else $("hname").textContent = HOSP[S.hid].name;
-    var tabs = [["work", "Worklist"]];
+    var tabs = [["work", "Worklist · GlioAgent assistant"]];
+    if ($("toolPane")) tabs.push(["tool", "Clinician tool (any case)"]);
     if (S.user.steward) tabs.push(["dash", "Site dashboard"]);
     tabs.push(["practice", "Practice · Daily Workup"]);
     $("tabs").innerHTML = tabs.map(function (t) { return "<button class=\"g" + (S.tab === t[0] ? " sel" : "") + "\" data-act=\"tab\" data-tab=\"" + t[0] + "\" id=\"tab_" + t[0] + "\">" + esc(t[1]) + "</button>"; }).join("") +
-      "<span class=\"sp sm muted\">" + (S.user.informer ? "Informer sign-in" : "Demo sign-in") + " · simulated hospitals · public research data · 1 simulated day = " + esc(SPEED) + " s</span>" +
+      "<span class=\"sp sm muted\">" + (IU ? "Informer: " + esc(IU.name) + " · demo persona" : "Demo sign-in") + " · simulated hospitals · public research data · 1 simulated day = " + esc(SPEED) + " s</span>" +
       "<button class=\"g sm\" data-act=\"reset\" id=\"resetBtn\">Reset simulation</button>";
     tickClock();
   }
@@ -200,6 +205,10 @@
 
   function render() {
     renderHeader();
+    var tp = $("toolPane"), onTool = !!(tp && S.user && S.hid && S.tab === "tool");
+    if (tp) tp.hidden = !onTool;
+    $("view").hidden = onTool;
+    if (onTool) return;
     if (!S.user || !S.hid) return renderSignin();
     if (S.tab === "dash" && S.user.steward) return renderDash();
     if (S.tab === "practice") return renderPractice();
@@ -222,18 +231,26 @@
             anySite: !site, informer: true};
   }
   function renderSignin() {
-    var v = $("view");
-    if (S.user && S.user.informer) {
-      v.innerHTML = "<div class=\"card signin\"><h2>Choose your hospital</h2><div class=\"sm muted\">Signed in as " + esc(S.user.name) +
-        " (Informer). No site role was found, so pick a simulated hospital.</div><div class=\"ulist\">" + D.hospitals.map(function (h) {
-          return "<button class=\"g\" data-act=\"pickhosp\" data-h=\"" + esc(h.id) + "\">" + esc(h.name) + "</button>"; }).join("") + "</div></div>";
-      return;
-    }
-    v.innerHTML = "<div class=\"card signin\"><h2>Demo sign-in · simulated hospitals · public research data</h2>" +
-      "<div class=\"sm muted\">Pick a demo user. Hospitals are fictional; cases are adults from public research cohorts; time is compressed (1 simulated day = " + esc(SPEED) +
-      " real seconds). No password: this is a demonstration, not a clinical system.</div><div class=\"ulist\">" + USERS.map(function (u) {
-        return "<button class=\"g\" data-act=\"signin\" data-u=\"" + esc(u.id) + "\" id=\"u_" + esc(u.id.replace(".", "_")) + "\"><b>" + esc(u.id) + "</b><span class=\"sm muted\">" + esc(u.role) +
+    var v = $("view"), pre = "";
+    if (IU && IU.site) USERS.forEach(function (u) { if (!pre && u.site === IU.site && !u.steward) pre = u.id; });
+    v.innerHTML = "<div class=\"card signin\"><h2>Sign in · GlioAgent Workup</h2>" +
+      "<div class=\"sm muted\">Simulated hospital accounts. Hospitals are fictional; their worklists are adult glioma cases from the public TCGA cohort, split by the contributing institution. " +
+      "Time is compressed (1 simulated day = " + esc(SPEED) + " real seconds). This is a demonstration, not a clinical system.</div>" +
+      (IU ? "<div class=\"note\">Signed in to Informer as <b>" + esc(IU.name) + "</b>. Choose the simulated hospital account to use.</div>" : "") +
+      "<form id=\"loginForm\" class=\"login\" autocomplete=\"off\"><label>Email<input id=\"loginEmail\" type=\"email\" placeholder=\"dummy_clinician@lakeside-general.example\" value=\"" + esc(pre) + "\"></label>" +
+      "<label>Password<input id=\"loginPass\" type=\"password\" placeholder=\"demo\"></label>" +
+      "<button class=\"g pri\" type=\"submit\" id=\"loginBtn\">Sign in</button><div class=\"sm bad\" id=\"loginErr\" role=\"alert\"></div></form>" +
+      "<h3>Demo accounts (password: <code>" + esc(DEMO_PASSWORD) + "</code>)</h3><div class=\"sm muted\">Click one to fill the form. Every account also has the Clinician tool and Practice · Daily Workup (external cohorts, not the hospital's own cases).</div>" +
+      "<div class=\"ulist\">" + USERS.map(function (u, i) {
+        return "<button class=\"g\" type=\"button\" data-act=\"fill\" data-u=\"" + esc(u.id) + "\" id=\"u_" + i + "\"><b>" + esc(u.id) + "</b><span class=\"sm muted\">" + esc(u.role) +
           (u.judge ? " · can switch hospital" : " · " + esc(HOSP[u.site].name)) + "</span></button>"; }).join("") + "</div></div>";
+  }
+  function tryLogin() {
+    var em = ($("loginEmail").value || "").trim().toLowerCase(), pw = $("loginPass").value || "";
+    var u = USERS.filter(function (x) { return x.id === em; })[0];
+    if (!u) { $("loginErr").textContent = "No demo account with that email. Pick one from the list below."; return; }
+    if (pw !== DEMO_PASSWORD) { $("loginErr").textContent = "Wrong password. The demo password is shown below."; return; }
+    signIn(u);
   }
 
   /* ---------------------------------------------------------------- worklist */
@@ -260,7 +277,7 @@
   function renderCase() {
     var hid = S.hid, a = findArr(hid, S.open), x = view(hid, a, now()), H = x.H, c = x.c, o = x.o, s = H.settings;
     var signed = !!x.cs.signed, rcfg = E.cfgOf({r: s.r});
-    var res = "<table class=\"res\" id=\"results\">" + T.map(function (t, j) {
+    var res = "<table class=\"res\" id=\"hresults\">" + T.map(function (t, j) {
       var od = x.ordered[t], cell;
       if (o[j] === 0 || o[j] === 1) cell = "<span class=\"rv " + (o[j] ? "pos" : "neg") + "\">" + esc(INFO[t][o[j] ? 2 : 1]) + "</span>" + (c.simulated.indexOf(t) >= 0 ? " <span class=\"pill\">simulated value</span>" : "");
       else if (od) cell = "<span class=\"rv pend\">pending · due " + esc(fmtTime(od.due)) + "</span>";
@@ -362,13 +379,13 @@
       (rows.length ? "<table class=\"q\"><tr><th>Case</th><th>Signed out</th><th>True (sim)</th><th>Days</th><th>Cost</th><th>Tests</th></tr>" + rows.map(function (x) {
         return "<tr><td>" + esc(shortId(hid, x.c)) + "</td><td>" + esc(clsText(x.cs.signed.cls)) + "</td><td>" + esc(SHORT[x.c.y]) + "</td><td>" + days(x.cs.signed.at - x.a.at) +
           "</td><td>" + esc(fmtCost(x.cost)) + "</td><td>" + esc(seqText(x.cs.orders.map(function (od) { return od.t; }))) + "</td></tr>"; }).join("") + "</table>" : "<div class=\"note\">No cases signed out yet in this session.</div>") +
-      "<div class=\"note\">In the Informer build these numbers come from the team's shared database. Here they are computed from this browser tab's simulated session only.</div></div>";
+      "<div class=\"note\">Computed from this browser tab's simulated session only (not yet shared across the team).</div></div>";
   }
 
   /* ---------------------------------------------------------------- practice: Daily Workup */
   var P = null, PCFG = null;
   function today() { var d = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; }; return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
-  function dailyCase(date) { return ALL[hash("daily-workup:" + date) % ALL.length]; }
+  function dailyCase(date) { var pool = PR.length ? PR : ALL; return pool[hash("daily-workup:" + date) % pool.length]; }
   function hist() { return sget("localStorage", "dw_history") || {}; }
   function streak(h) {
     var d = new Date(), n = 0, key = function (x) { var p = function (k) { return (k < 10 ? "0" : "") + k; }; return x.getFullYear() + "-" + p(x.getMonth() + 1) + "-" + p(x.getDate()); };
@@ -415,7 +432,7 @@
     var d = sup >= 0 || P.done ? null : E.dpChoose(w, o, c.g4, M.L, PCFG), stuck = !P.done && sup < 0 && d && d.j == null;
     var played = Object.keys(h).length;
     var head = "<div class=\"card\"><h2>" + (P.daily ? "Daily Workup · " + esc(P.date) : "Practice case (not counted)") + "</h2>" +
-      "<div class=\"sm muted\">" + (P.daily ? "One case a day, the same for everyone, from the pooled public cases of all five simulated hospitals. " : "A random extra case; it does not change your streak. ") +
+      "<div class=\"sm muted\">" + (P.daily ? "One case a day, the same for everyone, from external public cohorts (MSK, GLASS), never your hospital\u2019s own cases. " : "A random extra case; it does not change your streak. ") +
       "Order tests one at a time; results are instant. The case closes as soon as the CNS5 evidence supports a class. Par = the planner's cost on this case (full panel, molecular = 3, stain = 1).</div>" +
       "<div style=\"margin-top:6px\">Age " + esc(c.age_band) + " · " + esc(histo(c)) + " · <b>Par " + esc(fmtCost(P.par)) + "</b> · your cost so far <b id=\"dwCost\">" + esc(fmtCost(P.cost)) + "</b></div>" +
       "<div class=\"sm muted\">Streak: <b class=\"streak\">" + streak(h) + "</b> day" + (streak(h) === 1 ? "" : "s") + " · days played: " + played + "</div></div>";
@@ -471,11 +488,11 @@
     if (!el || el.disabled) return;
     var act = el.getAttribute("data-act");
     if (act === "logout" || act === "next" || act === "reset") e.preventDefault();
-    if (act === "signin") { var u = USERS.filter(function (x) { return x.id === el.getAttribute("data-u"); })[0]; if (u) signIn(u); return; }
+    if (act === "fill") { $("loginEmail").value = el.getAttribute("data-u"); $("loginPass").value = ""; $("loginErr").textContent = ""; $("loginPass").focus(); return; }
     if (act === "pickhosp") { S.hid = el.getAttribute("data-h"); startClock(); save(); render(); return; }
     if (act === "logout") { S.user = null; S.hid = null; S.open = null; save(); render(); return; }
     if (act === "reset") { var u2 = S.user, h2 = S.hid; S = freshState(u2, h2); arrCache = {}; startClock(); save(); render(); return; }
-    if (act === "tab") { S.tab = el.getAttribute("data-tab"); if (S.tab === "work") S.open = null; save(); render(); return; }
+    if (act === "tab") { S.tab = el.getAttribute("data-tab"); if (S.tab === "work") S.open = null; save(); render(); window.scrollTo(0, 0); return; }
     if (act === "next") { nextEvent(); return; }
     if (act === "open") { S.open = el.getAttribute("data-c"); save(); render(); window.scrollTo(0, 0); return; }
     if (act === "back") { S.open = null; save(); render(); return; }
@@ -492,7 +509,7 @@
     }
     if (act === "dw-order") { practiceOrder(el.getAttribute("data-t")); render(); return; }
     if (act === "dw-nos") { if (P && !P.done) finish(-1, false); render(); return; }
-    if (act === "dw-extra") { var r = ALL[Math.floor(Math.random() * ALL.length)]; newGame(r, false); render(); return; }
+    if (act === "dw-extra") { var pool = PR.length ? PR : ALL, r = pool[Math.floor(Math.random() * pool.length)]; newGame(r, false); render(); return; }
     if (act === "dw-today") { P = null; render(); return; }
     if (act === "dw-copy") {
       var ta = $("shareTxt"), done = function () { el.textContent = "Copied"; };
@@ -501,7 +518,7 @@
     }
   }
   function onChange(e) {
-    if (e.target && e.target.id === "hsel") { S.hid = e.target.value; S.open = null; S.tab = S.tab === "practice" ? "practice" : S.tab; save(); lastSig = null; render(); }
+    if (e.target && e.target.id === "hsel") { S.hid = e.target.value; S.open = null; save(); lastSig = null; render(); }
   }
 
   /* Re-render only when something visible happens (a case arrives or a result returns), never on every tick. */
@@ -522,26 +539,23 @@
   function boot() {
     PCFG = E.cfgOf({r: 3});
     D.hospitals.forEach(function (h) { HOSP[h.id] = h; h.cases.forEach(function (c) { ALL.push(c); }); });
+    PR = D.practice || [];
     var saved = sget("sessionStorage", KEY);
     S = saved && saved.v === 1 && saved.hosp ? saved : freshState();
     if (S.hid && !HOSP[S.hid]) S.hid = null;
-    var iu = null;
-    try { iu = informerUser(); } catch (e) { iu = null; }   // unknown host object shape: never break the page
-    if (iu) {
-      var keep = S.user && S.user.informer && S.user.id === iu.id ? S.hid : null;
-      S.user = iu; S.hid = iu.site || keep;
-      if (S.hid) startClock();
-    }
+    try { IU = informerUser(); } catch (e) { IU = null; }   // unknown host object shape: never break the page
+    if (S.user && S.user.informer) { S.user = null; S.hid = null; }   // older sessions auto-signed-in from Informer
     save();
     document.addEventListener("click", onClick);
     document.addEventListener("change", onChange);
+    document.addEventListener("submit", function (e) { if (e.target && e.target.id === "loginForm") { e.preventDefault(); tryLogin(); } });
     render();
     setInterval(tick, 250);
-    window.__HOSP = {model: M, practice: function () { return P ? {o: P.o.slice(), g4: P.c.g4, prior: P.prior.slice(), done: P.done, par: P.par, cost: P.cost} : null; },
+    window.__HOSP = {model: M, practice: function () { return P ? {id: P.c.id, o: P.o.slice(), g4: P.c.g4, prior: P.prior.slice(), done: P.done, par: P.par, cost: P.cost} : null; },
                      now: function () { return now(); }};
   }
-  Promise.all([fetch("../clinic/model.json").then(function (r) { if (!r.ok) throw new Error("model " + r.status); return r.json(); }),
-               fetch("cases.json").then(function (r) { if (!r.ok) throw new Error("cases " + r.status); return r.json(); })])
+  Promise.all([fetch(document.body.getAttribute("data-model") || "../clinic/model.json").then(function (r) { if (!r.ok) throw new Error("model " + r.status); return r.json(); }),
+               fetch(document.body.getAttribute("data-cases") || "cases.json").then(function (r) { if (!r.ok) throw new Error("cases " + r.status); return r.json(); })])
     .then(function (v) { M = v[0]; D = v[1]; boot(); })
     .catch(function (e) { $("view").innerHTML = "<div class=\"card\">Could not load the simulation data: " + esc(e.message || e) + "</div>"; });
 })();

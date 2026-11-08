@@ -1,12 +1,17 @@
 """End-to-end test of the hospital simulation + Daily Workup page (web/hospital/) in headless Chrome. Needs websocket-client.
 
     python tests/e2e_hospital.py --url http://127.0.0.1:8770/hospital/ --shots OUTDIR
+    python tests/e2e_hospital.py --url http://127.0.0.1:8771/ --shots OUTDIR --informer-build   # the built Informer app (dist/)
+
+The page is the single entry of the Informer App: a sign-in form (demo email accounts), then tabs for the worklist with
+the GlioAgent assistant, the clinician tool, Practice (Daily Workup, external cohorts only) and the steward dashboard.
 
 Uses ?speed=2 (2 real seconds per simulated day) and a fixed arrival seed. Checks: demo sign-in, worklist, a full case
 workup following the assistant (order, advance the clock, sign out), the debrief, persistence across reload, the
 resource-limited hospital's unavailable 1p/19q and send-out labels, the steward dashboard, and one Daily Workup game
 played in the planner's order (must score exactly Par unless the planner itself goes out of bounds via the surrogate).
-Fails on any JS exception or console error, any /api request, or any request to another host.
+Fails on any JS exception or console error, any /api request, or any request to another host. With --informer-build the
+team log's /api/_server/caselog requests are allowed (they 404 off Informer) and their console errors are ignored.
 """
 import argparse
 import json
@@ -26,7 +31,7 @@ CASE_STATE = r"""
   var s=document.getElementById('supported'), g=document.getElementById('sug');
   return {sup: s ? +s.getAttribute('data-cls') : null, sug: g ? g.getAttribute('data-t') : null,
           nos: !!(g && g.getAttribute('data-nos')), debrief: !!document.getElementById('debrief'),
-          pending: document.querySelectorAll('#results .pend').length};
+          pending: document.querySelectorAll('#hresults .pend').length};
 })()
 """
 
@@ -43,7 +48,7 @@ PRACTICE_STEP = r"""
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--url", required=True); ap.add_argument("--shots", required=True)
-    ap.add_argument("--port", type=int, default=9341)
+    ap.add_argument("--port", type=int, default=9341); ap.add_argument("--informer-build", action="store_true")
     a = ap.parse_args(); os.makedirs(a.shots, exist_ok=True)
     url = a.url + ("&" if "?" in a.url else "?") + "speed=2&seed=e2e"
     prof = tempfile.mkdtemp(prefix="hosp_chrome_")
@@ -74,13 +79,31 @@ def main():
         def text(sel):
             return c.ev(f"(function(){{var e=document.querySelector({json.dumps(sel)}); return e ? e.textContent : null;}})()")
 
+        EMAIL = {"clin.lakeside": "dummy_clinician@lakeside-general.example", "clin.valley": "dummy_clinician@valley-community.example",
+                 "steward.lakeside": "dummy_steward@lakeside-general.example", "judge": "judge@glioagent-demo.example"}
+
+        def login(email, pw):
+            c.ev("(function(){document.getElementById('loginEmail').value=%s;document.getElementById('loginPass').value=%s;})()" % (json.dumps(email), json.dumps(pw)))
+            click("#loginBtn"); time.sleep(0.5)
+
         def signin(uid):
             click("#logout"); time.sleep(0.2)
-            ok = click("#u_" + uid.replace(".", "_")); time.sleep(0.5); return ok
+            if not c.ev("!!document.getElementById('loginForm')"):
+                return False
+            login(EMAIL[uid], "demo"); return bool(c.ev("!!document.getElementById('tabs') && !document.getElementById('tabs').hidden"))
 
         c.call("Page.navigate", url=url); time.sleep(1.5); c.drain(0.3)
         c.shot(f"{a.shots}/h0_signin.png")
-        expect("demo sign-in label shown", "Demo sign-in · simulated hospitals · public research data" in (text("#view") or ""))
+        v0 = text("#view") or ""
+        expect("opens on the sign-in page with a form and 7 demo accounts", "Sign in · GlioAgent Workup" in v0 and
+               c.ev("document.querySelectorAll('[data-act=fill]').length") == 7, v0[:120])
+        expect("clinician tool hidden before sign-in", c.ev("document.getElementById('toolPane').hidden") is True)
+        login(EMAIL["clin.lakeside"], "wrong")
+        expect("wrong password rejected", "Wrong password" in (text("#loginErr") or "") and c.ev("document.getElementById('tabs').hidden") is True)
+        login("nobody@lakeside-general.example", "demo")
+        expect("unknown email rejected", "No demo account" in (text("#loginErr") or ""))
+        click("[data-act=fill][data-u='dummy_clinician@riverbend-university.example']")
+        expect("clicking a demo account fills the email", c.ev("document.getElementById('loginEmail').value") == "dummy_clinician@riverbend-university.example")
         expect("sign in as clin.lakeside", signin("clin.lakeside"))
         n_rows = c.ev("document.querySelectorAll('#worklist tr.wrow').length")
         expect("worklist shows >= 3 cases", (n_rows or 0) >= 3, str(n_rows))
@@ -88,6 +111,15 @@ def main():
         expect("header shows the simulated clock", clock.startswith("Day "), clock)
         expect("header shows the hospital name", "Lakeside General Hospital" in (text("#hname") or ""))
         c.shot(f"{a.shots}/h1_worklist.png")
+
+        # --- clinician tool tab (same page, same sign-in)
+        expect("clinician tool tab opens", click("#tab_tool")); time.sleep(0.3)
+        expect("tool tab: tool shown, worklist hidden", c.ev("document.getElementById('toolPane').hidden") is False and c.ev("document.getElementById('view').hidden") is True)
+        click("#examples button"); time.sleep(0.3)
+        expect("tool tab: an example case gives probabilities and a next step", len(text("#postCard") or "") > 20 and len(text("#nextCard") or "") > 20)
+        c.shot(f"{a.shots}/h1b_tool.png")
+        click("#tab_work"); time.sleep(0.3)
+        expect("back to worklist", c.ev("document.getElementById('toolPane').hidden") is True and (c.ev("document.querySelectorAll('#worklist tr.wrow').length") or 0) >= 3)
 
         # --- one full case following the assistant
         click("#worklist tr.wrow"); time.sleep(0.4)
@@ -130,7 +162,7 @@ def main():
         expect("steward sees the dashboard tab", click("#tab_dash")); time.sleep(0.4)
         kn = text("#k_n .v") or "0"
         expect("dashboard shows >= 1 signed-out case", kn.isdigit() and int(kn) >= 1, kn)
-        expect("dashboard carries the Informer note", "In the Informer build these numbers come from the team's shared database." in (text("#dash") or ""))
+        expect("dashboard says it is this session only", "this browser tab's simulated session only" in (text("#dash") or ""))
         c.shot(f"{a.shots}/h5_dashboard.png")
 
         # --- judge can switch hospital
@@ -153,6 +185,10 @@ def main():
         # --- Daily Workup
         expect("practice tab opens", click("#tab_practice")); time.sleep(0.4)
         c.shot(f"{a.shots}/h7_practice_start.png")
+        src = c.ev("(function(){var x=new XMLHttpRequest();x.open('GET',document.body.getAttribute('data-cases'),false);x.send();var D=JSON.parse(x.responseText),"
+                   "id=window.__HOSP.practice().id,inP=D.practice.some(function(c){return c.id===id;}),"
+                   "inH=D.hospitals.some(function(h){return h.cases.some(function(c){return c.id===id;});});return {p:inP,h:inH,n:D.practice.length};})()")
+        expect("daily case comes from the external practice pool, not a hospital", src and src["p"] and not src["h"] and src["n"] >= 100, str(src))
         moves = []
         for _ in range(12):
             r = c.ev(PRACTICE_STEP); moves.append(r); time.sleep(0.25)
@@ -192,7 +228,7 @@ def main():
         click("#worklist tr.wrow"); time.sleep(0.3)
         sug = c.ev(CASE_STATE)["sug"]
         expect("no-storage: case opens and an order works", bool(sug) and click(f"#testBtns button[data-t='{sug}']") and
-               c.ev("document.querySelectorAll('#results .pend').length") >= 1)
+               c.ev("document.querySelectorAll('#hresults .pend').length") >= 1)
         expect("no-storage: practice tab opens", click("#tab_practice")); time.sleep(0.3)
         for _ in range(12):
             if c.ev(PRACTICE_STEP) in ("done", "stuck", "nobtn", "noprac"):
@@ -201,32 +237,32 @@ def main():
         expect("no-storage: daily case completes with a golf label", bool(text("#golf")) and "Daily Workup" in (c.ev("(function(){var t=document.getElementById('shareTxt'); return t ? t.value : '';})()") or ""))
         c.shot(f"{a.shots}/h9_nostorage_practice.png")
 
-        # --- Informer build: window.__INFORMER__.user (storage still blocked, as in a sandboxed iframe)
+        # --- inside Informer: window.__INFORMER__.user is noted, but the demo sign-in is still required (storage still blocked)
         sid = c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{displayName:'Dr Test <b>x</b>',roles:['site_valley',{id:'steward'}]}};")["identifier"]
         c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer")); time.sleep(1.5)
-        who = c.ev("document.getElementById('who').textContent") or ""
-        expect("informer: display name shown and escaped", "Dr Test <b>x</b>" in who, who)
-        expect("informer: site role selects Valley", "Valley Community Hospital" in (text("#hname") or ""))
-        expect("informer: steward role shows dashboard; no demo sign-out link",
-               bool(c.ev("!!document.getElementById('tab_dash')")) and c.ev("document.getElementById('logout').hidden") is True)
-        expect("informer: label says Informer sign-in", "Informer sign-in" in (text("#tabs") or ""))
+        v1 = text("#view") or ""
+        expect("informer: still opens on the sign-in page, Informer name shown escaped", "Signed in to Informer as Dr Test <b>x</b>" in v1 and
+               bool(c.ev("!!document.getElementById('loginForm')")), v1[:200])
+        expect("informer: site role prefills the Valley clinician", c.ev("document.getElementById('loginEmail').value") == "dummy_clinician@valley-community.example")
+        c.ev("document.getElementById('loginPass').value='demo'"); click("#loginBtn"); time.sleep(0.5)
+        expect("informer: signs in to Valley", "Valley Community Hospital" in (text("#hname") or ""))
+        expect("informer: label names the Informer user", "Informer: Dr Test" in (text("#tabs") or ""))
         c.shot(f"{a.shots}/h10_informer.png")
         c.call("Page.removeScriptToEvaluateOnNewDocument", identifier=sid)
         c.call("Page.addScriptToEvaluateOnNewDocument", source="window.__INFORMER__={user:{name:'nosite',roles:[]}};")
         c.call("Page.navigate", url=url.replace("seed=e2e", "seed=informer2")); time.sleep(1.5)
-        npick = c.ev("document.querySelectorAll('[data-act=pickhosp]').length")
-        expect("informer without site role: hospital picker (5)", npick == 5, str(npick))
-        click("[data-act=pickhosp][data-h=harbor]"); time.sleep(0.3)
-        expect("informer: picking a hospital shows its worklist", "Harbor Point Cancer Institute" in (text("#view h2") or ""))
+        expect("informer without site role: empty email, judge can sign in", c.ev("document.getElementById('loginEmail').value") == "" and signin("judge"))
 
         c.drain(1.0)
         reqs = [e["params"]["request"]["url"] for e in c.events if e.get("method") == "Network.requestWillBeSent"]
         host = urlparse(a.url).netloc
         errors = [e for e in c.events if e.get("method") == "Runtime.exceptionThrown"]
-        cons = [e["params"]["entry"]["text"][:200] for e in c.events if e.get("method") == "Log.entryAdded" and e["params"]["entry"]["level"] == "error"]
+        cons = [e["params"]["entry"]["text"][:200] for e in c.events if e.get("method") == "Log.entryAdded" and e["params"]["entry"]["level"] == "error"
+                and not (a.informer_build and "/api/_server/caselog" in (e["params"]["entry"].get("url") or ""))]
         expect("0 JS exceptions", not errors, json.dumps([e["params"]["exceptionDetails"] for e in errors[:2]])[:600])
         expect("0 console errors", not cons, str(cons)[:400])
-        expect("0 /api requests", not [u for u in reqs if "/api/" in u])
+        expect("0 /api requests" + (" (other than the team log)" if a.informer_build else ""),
+               not [u for u in reqs if "/api/" in u and not (a.informer_build and "/api/_server/caselog" in u)])
         expect("0 requests to other hosts", not [u for u in reqs if urlparse(u).netloc not in (host, "") and not u.startswith("data:")])
         print("requests:", sorted(set(urlparse(u).path for u in reqs)))
         print("E2E HOSPITAL", "PASS" if not fails else f"FAIL {fails}")
