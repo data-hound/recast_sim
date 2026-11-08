@@ -1,0 +1,26 @@
+.clinic{max-width:1240px;margin:0 auto;padding:12px 16px 40px}
+.cnav{margin-left:auto;display:flex;gap:14px}.cnav a{color:var(--mut);text-decoration:none}.cnav a:hover{color:var(--acc)}
+.banner{background:#2a2112;border:1px solid var(--warn);color:#f3d29a;border-radius:10px;padding:9px 12px;margin:6px 0 4px;font-size:14px}
+.cols{display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,1.25fr);gap:14px}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+.clinic h2{font-size:17px;margin:0 0 10px}.clinic h3{font-size:14px;margin:14px 0 6px;color:var(--mut);font-weight:600}
+.clinic label{display:block;font-size:13px;color:var(--mut);margin:4px 0}
+.clinic input[type=number],.clinic select{display:block;width:100%;margin-top:3px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 8px;font-size:14px}
+.clinic label.chk{display:flex;gap:8px;align-items:flex-start;color:var(--txt);margin:10px 0 2px}.clinic label.chk input{margin-top:3px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}.ex{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.ex button{font-size:12px;padding:5px 9px}
+table.res{width:100%;border-collapse:collapse}table.res td{padding:4px 2px;border-bottom:1px solid var(--line);font-size:14px}table.res td:first-child{width:46%}
+table.res select{margin:0}table.res .na{color:var(--mut);font-size:11px}
+.avail{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}.avail label{display:flex;gap:6px;align-items:center;color:var(--txt);margin:2px 0}
+.big{font-size:16px;font-weight:600}.okc{border-left:4px solid var(--ok)}.warnc{border-left:4px solid var(--warn)}.badc{border-left:4px solid var(--bad)}
+.alert{background:#2a2112;border:1px solid var(--warn);border-radius:8px;padding:9px 11px;margin:10px 0;font-size:14px}
+.note{background:var(--panel2);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px;color:var(--mut)}
+.chk3{margin:6px 0;font-size:14px}.chk3 .ok{color:var(--ok)}.chk3 .no{color:var(--mut)}
+table.q{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}table.q th{text-align:left;color:var(--mut);font-weight:500;border-bottom:1px solid var(--line);padding:4px}
+table.q td{padding:5px 4px;border-bottom:1px solid var(--line);vertical-align:top}table.q tr.best td{background:#1d2a45}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:12px;color:var(--mut);margin-left:4px}
+textarea.sum{width:100%;min-height:170px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.muted{color:var(--mut)}.sm{font-size:12px}
+#how p,#how li{font-size:14px;color:var(--txt)}#how li{margin:3px 0}
+.clinic input[type=checkbox]{width:auto;flex:none;margin:0 6px 0 0}
+.avail label{justify-content:flex-start;text-align:left}.avail label .pill{margin-left:auto}

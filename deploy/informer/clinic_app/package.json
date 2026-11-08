@@ -1,0 +1,22 @@
+{
+  "name": "glioagent-workup-clinic",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "sync": "sh sync.sh",
+    "dev": "sh sync.sh && vite",
+    "build": "sh sync.sh && vite build",
+    "deploy": "npm run build && informer-deploy",
+    "workspace:init": "informer-workspace init",
+    "workspace:migrate": "informer-workspace migrate"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "@entrinsik/vite-plugin-informer": "^2.14.0"
+  },
+  "informer": {
+    "name": "GlioAgent Workup (clinician)",
+    "description": "WHO CNS5 adult diffuse glioma workup assistant: probabilities, evidence status, the exact cost-optimal next test (the planner GlioAgent learned to match), surrogate warning and tumour-board summary. Research prototype, not for clinical decisions."
+  }
+}

@@ -1,0 +1,10 @@
+# GlioAgent Workup (clinician): no Informer datasets needed. All computation runs in the page;
+# the only server code is the opt-in team log (server/caselog, migrations/001_case_log.sql).
+dependencies: {}
+roles:
+  - id: clinician
+    name: Clinician
+    description: Uses the tool and may save de-identified cases to the team log
+  - id: steward
+    name: Stewardship lead
+    description: Reviews the team log and its summary

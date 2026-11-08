@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlioAgent Workup: clinician tool</title>
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="clinic.css">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<header>
+  <div class="brand">GlioAgent <b>Workup</b> · clinician tool</div>
+  <nav class="cnav"><a href="#how">How it works</a><a href="../">Path Arcade</a></nav>
+</header>
+<main class="clinic">
+  <div class="banner" role="note"><b>Research prototype. Not for clinical decisions.</b> Nothing you enter leaves this browser: after the page and its public model load, it makes no network requests and stores nothing.</div>
+  <div class="cols">
+    <section class="col" id="inputs">
+      <div class="card">
+        <h2>Case</h2>
+        <div class="ex" id="examples"><span class="sm muted">Examples:</span></div>
+        <div class="grid2">
+          <label>Age (years)<input id="age" type="number" min="18" max="100" placeholder="e.g. 54"></label>
+          <label>Histological grade<select id="grade"><option value="?">unknown</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+        </div>
+        <label class="chk"><input id="g4" type="checkbox"> Histology shows glioblastoma / grade 4 features (necrosis or microvascular proliferation)</label>
+        <h3>Starting probabilities</h3>
+        <div class="seg" id="priorMode"><button class="g sel" data-m="clinical">Clinical model (age + grade)</button><button class="g" data-m="custom">My own estimate</button></div>
+        <div id="customPrior" hidden>
+          <div class="grid3"><label>GBM %<input id="pg" type="number" min="0" max="100" value="34"></label><label>Astro %<input id="pa" type="number" min="0" max="100" value="33"></label><label>Oligo %<input id="po" type="number" min="0" max="100" value="33"></label></div>
+          <div class="sm muted">For example a slide-model output or your own judgement. Each class is kept at 1% or more and the three are rescaled to 100%.</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Results so far</h2>
+        <table class="res" id="results"></table>
+      </div>
+      <div class="card">
+        <h2>Your site</h2>
+        <label>Cost of a molecular test relative to a stain<select id="r"><option value="1.5">1.5×</option><option value="3" selected>3× (default)</option><option value="5">5×</option><option value="10">10× (send-out)</option></select></label>
+        <div class="sm muted" style="margin:6px 0 4px">Tests available here (untick what your site cannot run or send out):</div>
+        <div id="avail" class="avail"></div>
+      </div>
+    </section>
+    <section class="col" id="out">
+      <div class="card" id="postCard"></div>
+      <div class="card" id="evidenceCard"></div>
+      <div class="card" id="nextCard"></div>
+      <div class="card" id="pendingCard" hidden></div>
+      <div class="card" id="txCard" hidden></div>
+      <div class="card" id="summaryCard"></div>
+    </section>
+  </div>
+  <div class="card" id="how"></div>
+</main>
+<footer id="foot">Research prototype from RECAST v2 (Track 2, GlioAgent). Not medical advice. Not a medical device.</footer>
+<script src="../js/clinic_engine.js"></script>
+<script src="../js/clinic.js"></script>
+</body>
+</html>
